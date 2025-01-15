@@ -1,26 +1,51 @@
-name: Issue labeler
+name: Issue Labeler
 on:
   issues:
     types: [opened]
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   label-component:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
 
     steps:
+      # Checkout repository
       - uses: actions/checkout@v3
 
+      # Parse issue form
       - name: Parse issue form
         uses: stefanbuck/github-issue-parser@v3
         id: issue-parser
         with:
           template-path: .github/ISSUE_TEMPLATE/bug-report.yaml
 
+      # Debug issue form parsing
+      - name: Debug issue form parsing
+        run: echo "${{ steps.issue-parser.outputs.jsonString }}"
+
+      # Ensure labels exist
+      - name: Create missing labels
+        env:
+          ISSUE_FORM: ${{ steps.issue-parser.outputs.jsonString }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Ensuring labels exist for the issue"
+          labels=$(echo $ISSUE_FORM | jq -r '.os')
+          for label in $labels; do
+            if [[ "$label" != "None" && "$label" != "Other" ]]; then
+              echo "Ensuring label '$label' exists"
+              curl -s -X POST \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/${{ github.repository }}/labels \
+                -d "{\"name\":\"$label\", \"color\":\"f29513\"}" || echo "Label '$label' already exists"
+            fi
+          done
+
+      # Set labels based on OS field
       - name: Set labels based on OS field
         uses: redhat-plumbers-in-action/advanced-issue-labeler@v2
         with:
